@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scan CUDA headers and compare against HAMI CUDA hook APIs."""
+"""Scan CUDA headers and report header->hook coverage gaps."""
 
 from __future__ import annotations
 
@@ -91,22 +91,22 @@ def to_report(
     declared_apis: set[str],
 ) -> dict[str, object]:
     hook_set = set(hook_apis)
-    present = sorted(hook_set & declared_apis)
-    missing = sorted(hook_set - declared_apis)
+    covered = sorted(hook_set & declared_apis)
+    missing_in_hook = sorted(declared_apis - hook_set)
     return {
         "cuda_version": cuda_version,
         "include_dir": str(include_dir),
-        "hook_api_count": len(hook_set),
         "declared_driver_api_count": len(declared_apis),
-        "present_hook_api_count": len(present),
-        "missing_hook_api_count": len(missing),
-        "missing_hook_apis": missing,
+        "hook_api_count": len(hook_set),
+        "covered_driver_api_count": len(covered),
+        "missing_in_hook_count": len(missing_in_hook),
+        "missing_in_hook_apis": missing_in_hook,
     }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare HAMI hook APIs with installed CUDA header declarations."
+        description="Compare CUDA header declarations against HAMI hook coverage."
     )
     parser.add_argument(
         "--cuda-version",
@@ -126,7 +126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Fail when any hook API is missing from CUDA headers.",
+        help="Fail when any CUDA header API is missing in HAMI hooks.",
     )
     return parser.parse_args()
 
@@ -154,16 +154,18 @@ def main() -> int:
         f"version={report['cuda_version']} include_dir={report['include_dir']}"
     )
     print(
-        "[INFO] hook_apis={hook_api_count}, declared_driver_apis={declared_driver_api_count}, "
-        "present={present_hook_api_count}, missing={missing_hook_api_count}".format(**report)
+        "[INFO] declared_driver_apis={declared_driver_api_count}, hook_apis={hook_api_count}, "
+        "covered={covered_driver_api_count}, missing_in_hook={missing_in_hook_count}".format(
+            **report
+        )
     )
 
-    missing = report["missing_hook_apis"]
+    missing = report["missing_in_hook_apis"]
     if missing:
-        preview = ", ".join(missing[:20])
-        suffix = "" if len(missing) <= 20 else f", ... (+{len(missing) - 20} more)"
         level = "ERROR" if args.strict else "WARN"
-        print(f"[{level}] Hook APIs missing in headers: {preview}{suffix}")
+        print(f"[{level}] CUDA header APIs missing in HAMI hooks ({len(missing)}):")
+        for symbol in missing:
+            print(f"[{level}]   - {symbol}")
 
     if args.output_json:
         output = Path(args.output_json)
@@ -171,7 +173,7 @@ def main() -> int:
         output.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
         print(f"[INFO] Report written: {output}")
 
-    if args.strict and report["missing_hook_api_count"] > 0:
+    if args.strict and report["missing_in_hook_count"] > 0:
         print("[FAIL] CUDA header matrix check failed in strict mode.")
         return 1
 

@@ -17,22 +17,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Install CUDA Toolkit ${{ matrix.cuda }}
-        uses: Jimver/cuda-toolkit@v0.2.20
-        with:
-          cuda: ${{ matrix.cuda }}
-          method: network
-          sub-packages: '["nvcc"]'
       - name: Run CUDA header matrix checker
         run: |
-          python3 hack/check_cuda_header_matrix.py \
-            --cuda-version "${{ matrix.cuda }}" \
-            --output-json "artifacts/cuda-header-matrix-${{ matrix.cuda }}.json"
-      - name: Upload header matrix report
-        uses: actions/upload-artifact@v4
-        with:
-          name: cuda-header-matrix-${{ matrix.cuda }}
-          path: artifacts/cuda-header-matrix-${{ matrix.cuda }}.json
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "nvidia/cuda:${{ matrix.cuda }}-devel-ubuntu22.04" \
+            bash -lc '
+              apt-get update &&
+              apt-get install -y --no-install-recommends python3 &&
+              python3 hack/check_cuda_header_matrix.py \
+                --cuda-version "${{ matrix.cuda }}" \
+                --include-dir /usr/local/cuda/include
+            '
 
   BuildHamiCoreLib:
     needs: [cuda-header-matrix-check]
