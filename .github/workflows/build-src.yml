@@ -6,7 +6,36 @@ on: [push, pull_request, workflow_dispatch]
 concurrency: ci-${{ github.ref }}
 
 jobs:
+  cuda-header-matrix-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    name: CUDA header matrix check
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda: ["12.2.0", "12.4.1", "12.6.3"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install CUDA Toolkit ${{ matrix.cuda }}
+        uses: Jimver/cuda-toolkit@v0.2.20
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: network
+          sub-packages: '["nvcc"]'
+      - name: Run CUDA header matrix checker
+        run: |
+          python3 hack/check_cuda_header_matrix.py \
+            --cuda-version "${{ matrix.cuda }}" \
+            --output-json "artifacts/cuda-header-matrix-${{ matrix.cuda }}.json"
+      - name: Upload header matrix report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuda-header-matrix-${{ matrix.cuda }}
+          path: artifacts/cuda-header-matrix-${{ matrix.cuda }}.json
+
   BuildHamiCoreLib:
+    needs: [cuda-header-matrix-check]
     runs-on: ubuntu-latest
     timeout-minutes: 1440
     strategy:
